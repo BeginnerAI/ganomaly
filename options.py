@@ -1,3 +1,10 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# File              : options.py
+# Author            : Tianming Jiang <djtimy920@gmail.com>
+# Date              : 05.11.2018
+# Last Modified Date: 28.12.2018
+# Last Modified By  : Tianming Jiang <djtimy920@gmail.com>
 """ Options
 
 This script is largely based on junyanz/pytorch-CycleGAN-and-pix2pix.
@@ -9,6 +16,8 @@ Returns:
 import argparse
 import os
 import torch
+import logging
+from logging.config import fileConfig
 
 # pylint: disable=C0103,C0301,R0903,W0622
 
@@ -26,7 +35,7 @@ class Options():
 
         ##
         # Base
-        self.parser.add_argument('--dataset', default='cifar10', help='folder | cifar10 | mnist ')
+        self.parser.add_argument('--dataset', default='cifar10', help='folder | cifar10 | mnist | disk')
         self.parser.add_argument('--dataroot', default='', help='path to dataset')
         self.parser.add_argument('--batchsize', type=int, default=64, help='input batch size')
         self.parser.add_argument('--workers', type=int, help='number of data loading workers', default=8)
@@ -37,7 +46,7 @@ class Options():
         self.parser.add_argument('--ngf', type=int, default=64)
         self.parser.add_argument('--ndf', type=int, default=64)
         self.parser.add_argument('--extralayers', type=int, default=0, help='Number of extra layers on gen and disc')
-        self.parser.add_argument('--device', type=str, default='gpu', help='Device: gpu | cpu')
+        self.parser.add_argument('--device', type=str, default='cpu', help='Device: gpu | cpu')
         self.parser.add_argument('--gpu_ids', type=str, default='0', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
         self.parser.add_argument('--ngpu', type=int, default=1, help='number of GPUs to use')
         self.parser.add_argument('--name', type=str, default='experiment_name', help='name of the experiment')
@@ -47,7 +56,8 @@ class Options():
         self.parser.add_argument('--display_id', type=int, default=0, help='window id of the web display')
         self.parser.add_argument('--display', action='store_true', help='Use visdom.')
         self.parser.add_argument('--outf', default='./output', help='folder to output images and model checkpoints')
-        self.parser.add_argument('--manualseed', default=-1, type=int, help='manual seed')
+        # 设置每次shuffle都一样，但是为什么要在run_minst.sh中设置3个不同的seed值呢？
+        self.parser.add_argument('--manualseed', default=-1, type=int, help='manual seed') 
         self.parser.add_argument('--anomaly_class', default='car', help='Anomaly class idx for mnist and cifar datasets')
         self.parser.add_argument('--proportion', type=float, default=0.1, help='Proportion of anomalies in test set.')
         self.parser.add_argument('--metric', type=str, default='roc', help='Evaluation metric.')
@@ -61,12 +71,13 @@ class Options():
         self.parser.add_argument('--resume', default='', help="path to checkpoints (to continue training)")
         self.parser.add_argument('--phase', type=str, default='train', help='train, val, test, etc')
         self.parser.add_argument('--iter', type=int, default=0, help='Start from iteration i')
-        self.parser.add_argument('--niter', type=int, default=15, help='number of epochs to train for')
+        self.parser.add_argument('--niter', type=int, default=1, help='number of epochs to train for')
         self.parser.add_argument('--beta1', type=float, default=0.5, help='momentum term of adam')
         self.parser.add_argument('--lr', type=float, default=0.0002, help='initial learning rate for adam')
         self.parser.add_argument('--w_bce', type=float, default=1, help='alpha to weight bce loss.')
         self.parser.add_argument('--w_rec', type=float, default=50, help='alpha to weight reconstruction loss')
         self.parser.add_argument('--w_enc', type=float, default=1, help='alpha to weight encoder loss')
+        self.parser.add_argument('--log_config_file', type=str, default='./lib/logging_config.ini', help='log configure file dir')
         self.isTrain = True
         self.opt = None
 
@@ -87,6 +98,11 @@ class Options():
         # set gpu ids
         if self.opt.device == 'gpu':
             torch.cuda.set_device(self.opt.gpu_ids[0])
+
+        # 设置logger
+        fileConfig(self.opt.log_config_file)
+        # self.opt.logger = logging.getLogger('stream')
+        self.opt.logger = logging.getLogger('root')
 
         args = vars(self.opt)
 

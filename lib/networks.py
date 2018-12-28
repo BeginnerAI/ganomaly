@@ -1,3 +1,10 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# File              : lib/networks.py
+# Author            : Tianming Jiang <djtimy920@gmail.com>
+# Date              : 07.11.2018
+# Last Modified Date: 25.12.2018
+# Last Modified By  : Tianming Jiang <djtimy920@gmail.com>
 """ Network architectures.
 """
 # pylint: disable=W0221,W0622,C0103,R0913
@@ -26,7 +33,6 @@ class Encoder(nn.Module):
     """
     DCGAN ENCODER NETWORK
     """
-
     def __init__(self, isize, nz, nc, ndf, ngpu, n_extra_layers=0, add_final_conv=True):
         super(Encoder, self).__init__()
         self.ngpu = ngpu
@@ -139,7 +145,6 @@ class NetD(nn.Module):
     """
     DISCRIMINATOR NETWORK
     """
-
     def __init__(self, opt):
         super(NetD, self).__init__()
         model = Encoder(opt.isize, 1, opt.nc, opt.ngf, opt.ngpu, opt.extralayers)
@@ -162,7 +167,6 @@ class NetG(nn.Module):
     """
     GENERATOR NETWORK
     """
-
     def __init__(self, opt):
         super(NetG, self).__init__()
         self.encoder1 = Encoder(opt.isize, opt.nz, opt.nc, opt.ngf, opt.ngpu, opt.extralayers)

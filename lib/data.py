@@ -1,29 +1,37 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# File              : lib/data.py
+# Author            : Tianming Jiang <djtimy920@gmail.com>
+# Date              : 19.12.2018
+# Last Modified Date: 28.12.2018
+# Last Modified By  : Tianming Jiang <djtimy920@gmail.com>
 """
 LOAD DATA from file.
+可以分为3个主要的步骤：
+1）利用torchvision中的MNIST模块下载MINST数据，并对数据进行transform；
+2）按照配置的异常值将MNIST数据划分为正常样本和异常样本，训练集包含80%的正常样本，测试集包含20%的正常样本和全部的异常样本；
+3）torch.utils.data.DataLoader将数据转化为PyTorchm模型的输入格式
 """
 
-# pylint: disable=C0301,E1101,W0622,C0103,R0902,R0915
-
 ##
-import os
 import torch
 import numpy as np
-import torchvision.datasets as datasets
 from torchvision.datasets import MNIST
-from torchvision.datasets import CIFAR10
-from torchvision.datasets import ImageFolder
+import torch.utils.data as dataf
+from torch.utils.data import Dataset, Subset, ConcatDataset
 import torchvision.transforms as transforms
+
+import glob
+import pandas as pd
+import numpy as np
 
 ##
 def load_data(opt):
-    """ Load Data
-
+    """ 
     Args:
         opt ([type]): Argument Parser
-
     Raises:
         IOError: Cannot Load Dataset
-
     Returns:
         [type]: dataloader
     """
@@ -33,72 +41,45 @@ def load_data(opt):
     if opt.dataroot == '':
         opt.dataroot = './data/{}'.format(opt.dataset)
 
-    if opt.dataset in ['cifar10']:
-        splits = ['train', 'test']
-        drop_last_batch = {'train': True, 'test': False}
-        shuffle = {'train': True, 'test': False}
-
-        transform = transforms.Compose(
-            [
-                transforms.Resize(opt.isize),
-                transforms.ToTensor(),
-                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-            ]
-        )
-
-        classes = {
-            'plane': 0, 'car': 1, 'bird': 2, 'cat': 3, 'deer': 4,
-            'dog': 5, 'frog': 6, 'horse': 7, 'ship': 8, 'truck': 9
-        }
-
-        dataset = {}
-        dataset['train'] = CIFAR10(root='./data', train=True, download=True, transform=transform)
-        dataset['test'] = CIFAR10(root='./data', train=False, download=True, transform=transform)
-
-        dataset['train'].train_data, dataset['train'].train_labels, \
-        dataset['test'].test_data, dataset['test'].test_labels = get_cifar_anomaly_dataset(
-            trn_img=dataset['train'].train_data,
-            trn_lbl=dataset['train'].train_labels,
-            tst_img=dataset['test'].test_data,
-            tst_lbl=dataset['test'].test_labels,
-            abn_cls_idx=classes[opt.anomaly_class]
-        )
-
-        dataloader = {x: torch.utils.data.DataLoader(dataset=dataset[x],
-                                                     batch_size=opt.batchsize,
-                                                     shuffle=shuffle[x],
-                                                     num_workers=int(opt.workers),
-                                                     drop_last=drop_last_batch[x]) for x in splits}
-        return dataloader
-
-    elif opt.dataset in ['mnist']:
-        opt.anomaly_class = int(opt.anomaly_class)
-
+    if opt.dataset in ['disk_1d']:
         splits = ['train', 'test']
         drop_last_batch = {'train': True, 'test': False}
         shuffle = {'train': True, 'test': True}
 
+        # transforms.Compose就是将transforms组合在一起
         transform = transforms.Compose(
             [
                 transforms.Scale(opt.isize),
-                transforms.ToTensor(),
-                transforms.Normalize((0.1307,), (0.3081,))
+                transforms.ToTensor(), # range [0, 255] -> [0.0,1.0]
             ]
         )
+        from sklearn import datasets
+        import numpy as np
+        # how to generate imbalanced dataset
+        data, labels = datasets.make_classification(n_samples=1000, n_features=3, n_redundant=0)
+
+        good_index = np.where(labels==1)
+        nrm_trn_len = int(len(good_index) * 0.80)
+        train_good_index = good_index[:nrm_trn_idx]
+        test_good_index = good_index[nrm_trn_idx:]
+
+        fail_index = np.where(labels!=1)
 
         dataset = {}
-        dataset['train'] = MNIST(root='./data', train=True, download=True, transform=transform)
-        dataset['test'] = MNIST(root='./data', train=False, download=True, transform=transform)
+        dataset['train'] = {
+                'train_data': data[train_good_index],
+                'train_lables': labels[train_good_index]
+                }
 
-        dataset['train'].train_data, dataset['train'].train_labels, \
-        dataset['test'].test_data, dataset['test'].test_labels = get_mnist_anomaly_dataset(
-            trn_img=dataset['train'].train_data,
-            trn_lbl=dataset['train'].train_labels,
-            tst_img=dataset['test'].test_data,
-            tst_lbl=dataset['test'].test_labels,
-            abn_cls_idx=opt.anomaly_class
-        )
+        dataset['test'] = {
+                'test_data': np.concatenate((data[test_good_index], data[fail_index])),
+                'test_labels': np.concatenate((labels[test_good_index], labels[fail_index]))
+                }
 
+        # 生成一个dict
+        # DataLoader中的shuffle，洗牌。默认设置为False。在每次迭代训练时是否将数据洗牌，默认设置是False。
+        # 将输入数据的顺序打乱，是为了使数据更有独立性，但如果数据是有序列特征的，就不要设置成True了。
+        # 在disk failure prediction中是不能够打乱次序的，因为SMART是有序的
         dataloader = {x: torch.utils.data.DataLoader(dataset=dataset[x],
                                                      batch_size=opt.batchsize,
                                                      shuffle=shuffle[x],
@@ -106,52 +87,32 @@ def load_data(opt):
                                                      drop_last=drop_last_batch[x]) for x in splits}
         return dataloader
 
-    elif opt.dataset in ['mnist2']:
-        opt.anomaly_class = int(opt.anomaly_class)
-
+    if opt.dataset in ['disk']:
         splits = ['train', 'test']
         drop_last_batch = {'train': True, 'test': False}
         shuffle = {'train': True, 'test': True}
 
+        # transforms.Compose就是将transforms组合在一起
         transform = transforms.Compose(
             [
-                transforms.Scale(opt.isize),
-                transforms.ToTensor(),
-                transforms.Normalize((0.1307,), (0.3081,))
+                transforms.ToPILImage(),
+                transforms.Resize(32),
+                transforms.ToTensor(), # range [0, 255] -> [0.0,1.0]
             ]
         )
 
+        good_sample_dir = '/home/jtm/data/cnn_disk/intermediate_result/data_2017_with_change_rate/baidu/good_sample/00443'
+        failed_sample_dir = '/home/jtm/data/cnn_disk/intermediate_result/data_2017_with_change_rate/baidu/failed_sample/00052'
+        good_sample = LoadDataset(good_sample_dir, 'good', transform)
+        failed_sample = LoadDataset(failed_sample_dir, 'failed', transform)
+
         dataset = {}
-        dataset['train'] = MNIST(root='./data', train=True, download=True, transform=transform)
-        dataset['test'] = MNIST(root='./data', train=False, download=True, transform=transform)
+        dataset['train'], dataset['test'] = get_disk_anomaly_dataset(good_sample, failed_sample, 1)
 
-        dataset['train'].train_data, dataset['train'].train_labels, \
-        dataset['test'].test_data, dataset['test'].test_labels = get_mnist2_anomaly_dataset(
-            trn_img=dataset['train'].train_data,
-            trn_lbl=dataset['train'].train_labels,
-            tst_img=dataset['test'].test_data,
-            tst_lbl=dataset['test'].test_labels,
-            nrm_cls_idx=opt.anomaly_class,
-            proportion=opt.proportion
-        )
-
-        dataloader = {x: torch.utils.data.DataLoader(dataset=dataset[x],
-                                                     batch_size=opt.batchsize,
-                                                     shuffle=shuffle[x],
-                                                     num_workers=int(opt.workers),
-                                                     drop_last=drop_last_batch[x]) for x in splits}
-        return dataloader
-
-    else:
-        splits = ['train', 'test']
-        drop_last_batch = {'train': True, 'test': False}
-        shuffle = {'train': True, 'test': True}
-        transform = transforms.Compose([transforms.Scale(opt.isize),
-                                        transforms.CenterCrop(opt.isize),
-                                        transforms.ToTensor(),
-                                        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)), ])
-
-        dataset = {x: ImageFolder(os.path.join(opt.dataroot, x), transform) for x in splits}
+        # 生成一个dict
+        # DataLoader中的shuffle，洗牌。默认设置为False。在每次迭代训练时是否将数据洗牌，默认设置是False。
+        # 将输入数据的顺序打乱，是为了使数据更有独立性，但如果数据是有序列特征的，就不要设置成True了。
+        # 在disk failure prediction中是不能够打乱次序的，因为SMART是有序的
         dataloader = {x: torch.utils.data.DataLoader(dataset=dataset[x],
                                                      batch_size=opt.batchsize,
                                                      shuffle=shuffle[x],
@@ -160,214 +121,69 @@ def load_data(opt):
         return dataloader
 
 ##
-def get_cifar_anomaly_dataset(trn_img, trn_lbl, tst_img, tst_lbl, abn_cls_idx=0, manualseed=-1):
-    """[summary]
-
-    Arguments:
-        trn_img {np.array} -- Training images
-        trn_lbl {np.array} -- Training labels
-        tst_img {np.array} -- Test     images
-        tst_lbl {np.array} -- Test     labels
-
-    Keyword Arguments:
-        abn_cls_idx {int} -- Anomalous class index (default: {0})
-
-    Returns:
-        [np.array] -- New training-test images and labels.
+def get_disk_anomaly_dataset(good_sample, failed_sample, manualseed=-1):
     """
-    # Convert train-test labels into numpy array.
-    trn_lbl = np.array(trn_lbl)
-    tst_lbl = np.array(tst_lbl)
-
-    # --
-    # Find idx, img, lbl for abnormal and normal on org dataset.
-    nrm_trn_idx = np.where(trn_lbl != abn_cls_idx)[0]
-    abn_trn_idx = np.where(trn_lbl == abn_cls_idx)[0]
-    nrm_trn_img = trn_img[nrm_trn_idx]    # Normal training images
-    abn_trn_img = trn_img[abn_trn_idx]    # Abnormal training images
-    nrm_trn_lbl = trn_lbl[nrm_trn_idx]    # Normal training labels
-    abn_trn_lbl = trn_lbl[abn_trn_idx]    # Abnormal training labels.
-
-    nrm_tst_idx = np.where(tst_lbl != abn_cls_idx)[0]
-    abn_tst_idx = np.where(tst_lbl == abn_cls_idx)[0]
-    nrm_tst_img = tst_img[nrm_tst_idx]    # Normal training images
-    abn_tst_img = tst_img[abn_tst_idx]    # Abnormal training images.
-    nrm_tst_lbl = tst_lbl[nrm_tst_idx]    # Normal training labels
-    abn_tst_lbl = tst_lbl[abn_tst_idx]    # Abnormal training labels.
-
-    # --
-    # Assign labels to normal (0) and abnormals (1)
-    nrm_trn_lbl[:] = 0
-    nrm_tst_lbl[:] = 0
-    abn_trn_lbl[:] = 1
-    abn_tst_lbl[:] = 1
-
-    # --
+    Arguments:
+        good_sample {Dataset} -- total good sample
+        failed_sample {Dataset} -- total failed sample
+    Returns:
+        [Tensor] -- New training-test images and labels.
+    """
     if manualseed != -1:
-        # Random seed.
-        # Concatenate the original train and test sets.
-        nrm_img = np.concatenate((nrm_trn_img, nrm_tst_img), axis=0)
-        nrm_lbl = np.concatenate((nrm_trn_lbl, nrm_tst_lbl), axis=0)
-        abn_img = np.concatenate((abn_trn_img, abn_tst_img), axis=0)
-        abn_lbl = np.concatenate((abn_trn_lbl, abn_tst_lbl), axis=0)
-
         # Split the normal data into the new train and tests.
-        idx = np.arange(len(nrm_lbl))
+        idx = np.arange(len(good_sample))
         np.random.seed(manualseed)
         np.random.shuffle(idx)
 
-        nrm_trn_len = int(len(idx) * 0.80)
-        nrm_trn_idx = idx[:nrm_trn_len]
-        nrm_tst_idx = idx[nrm_trn_len:]
+        good_train_lens = int(len(idx) * 0.80)
+        good_train_idx = idx[:good_train_lens]
+        good_test_idx = idx[good_train_lens:]
+        
+        good_train_sample = Subset(good_sample, good_train_idx)
+        good_test_sample = Subset(good_sample, good_test_idx)
 
-        nrm_trn_img = nrm_img[nrm_trn_idx]
-        nrm_trn_lbl = nrm_lbl[nrm_trn_idx]
-        nrm_tst_img = nrm_img[nrm_tst_idx]
-        nrm_tst_lbl = nrm_lbl[nrm_tst_idx]
+        train_sample = good_train_sample
+        test_sample = ConcatDataset((good_test_sample, failed_sample))
 
-    # Create new anomaly dataset based on the following data structure:
-    # - anomaly dataset
-    #   . -> train
-    #        . -> normal
-    #   . -> test
-    #        . -> normal
-    #        . -> abnormal
-    new_trn_img = np.copy(nrm_trn_img)
-    new_trn_lbl = np.copy(nrm_trn_lbl)
-    new_tst_img = np.concatenate((nrm_tst_img, abn_trn_img, abn_tst_img), axis=0)
-    new_tst_lbl = np.concatenate((nrm_tst_lbl, abn_trn_lbl, abn_tst_lbl), axis=0)
-
-    return new_trn_img, new_trn_lbl, new_tst_img, new_tst_lbl
-
-##
-def get_mnist_anomaly_dataset(trn_img, trn_lbl, tst_img, tst_lbl, abn_cls_idx=0, manualseed=-1):
-    """[summary]
-
-    Arguments:
-        trn_img {np.array} -- Training images
-        trn_lbl {np.array} -- Training labels
-        tst_img {np.array} -- Test     images
-        tst_lbl {np.array} -- Test     labels
-
-    Keyword Arguments:
-        abn_cls_idx {int} -- Anomalous class index (default: {0})
-
-    Returns:
-        [np.array] -- New training-test images and labels.
-    """
-    # --
-    # Find normal abnormal indexes.
-    nrm_trn_idx = torch.from_numpy(np.where(trn_lbl.numpy() != abn_cls_idx)[0])
-    abn_trn_idx = torch.from_numpy(np.where(trn_lbl.numpy() == abn_cls_idx)[0])
-    nrm_tst_idx = torch.from_numpy(np.where(tst_lbl.numpy() != abn_cls_idx)[0])
-    abn_tst_idx = torch.from_numpy(np.where(tst_lbl.numpy() == abn_cls_idx)[0])
-
-    # --
-    # Find normal and abnormal images
-    nrm_trn_img = trn_img[nrm_trn_idx]    # Normal training images
-    abn_trn_img = trn_img[abn_trn_idx]    # Abnormal training images.
-    nrm_tst_img = tst_img[nrm_tst_idx]    # Normal training images
-    abn_tst_img = tst_img[abn_tst_idx]    # Abnormal training images.
-
-    # --
-    # Find normal and abnormal labels.
-    nrm_trn_lbl = trn_lbl[nrm_trn_idx]    # Normal training labels
-    abn_trn_lbl = trn_lbl[abn_trn_idx]    # Abnormal training labels.
-    nrm_tst_lbl = tst_lbl[nrm_tst_idx]    # Normal training labels
-    abn_tst_lbl = tst_lbl[abn_tst_idx]    # Abnormal training labels.
-
-    # --
-    # Assign labels to normal (0) and abnormals (1)
-    nrm_trn_lbl[:] = 0
-    nrm_tst_lbl[:] = 0
-    abn_trn_lbl[:] = 1
-    abn_tst_lbl[:] = 1
-
-    # --
-    if manualseed != -1:
-        # Random seed.
-        # Concatenate the original train and test sets.
-        nrm_img = torch.cat((nrm_trn_img, nrm_tst_img), dim=0)
-        nrm_lbl = torch.cat((nrm_trn_lbl, nrm_tst_lbl), dim=0)
-        abn_img = torch.cat((abn_trn_img, abn_tst_img), dim=0)
-        abn_lbl = torch.cat((abn_trn_lbl, abn_tst_lbl), dim=0)
-
-        # Split the normal data into the new train and tests.
-        idx = np.arange(len(nrm_lbl))
-        np.random.seed(manualseed)
-        np.random.shuffle(idx)
-
-        nrm_trn_len = int(len(idx) * 0.80)
-        nrm_trn_idx = idx[:nrm_trn_len]
-        nrm_tst_idx = idx[nrm_trn_len:]
-
-        nrm_trn_img = nrm_img[nrm_trn_idx]
-        nrm_trn_lbl = nrm_lbl[nrm_trn_idx]
-        nrm_tst_img = nrm_img[nrm_tst_idx]
-        nrm_tst_lbl = nrm_lbl[nrm_tst_idx]
-
-    # Create new anomaly dataset based on the following data structure:
-    new_trn_img = nrm_trn_img.clone()
-    new_trn_lbl = nrm_trn_lbl.clone()
-    new_tst_img = torch.cat((nrm_tst_img, abn_trn_img, abn_tst_img), dim=0)
-    new_tst_lbl = torch.cat((nrm_tst_lbl, abn_trn_lbl, abn_tst_lbl), dim=0)
-
-    return new_trn_img, new_trn_lbl, new_tst_img, new_tst_lbl
-
-##
-def get_mnist2_anomaly_dataset(trn_img, trn_lbl, tst_img, tst_lbl, nrm_cls_idx=0, proportion=0.5):
-    """ Create mnist 2 anomaly dataset.
-
-    Arguments:
-        trn_img {np.array} -- Training images
-        trn_lbl {np.array} -- Training labels
-        tst_img {np.array} -- Test     images
-        tst_lbl {np.array} -- Test     labels
-
-    Keyword Arguments:
-        nrm_cls_idx {int} -- Anomalous class index (default: {0})
-
-    Returns:
-        [tensor] -- New training-test images and labels.
-    """
-    # --
-    # Find normal abnormal indexes.
-    # TODO: PyTorch v0.4 has torch.where function
-    nrm_trn_idx = torch.from_numpy(np.where(trn_lbl.numpy() == nrm_cls_idx)[0])
-    abn_trn_idx = torch.from_numpy(np.where(trn_lbl.numpy() != nrm_cls_idx)[0])
-    nrm_tst_idx = torch.from_numpy(np.where(tst_lbl.numpy() == nrm_cls_idx)[0])
-    abn_tst_idx = torch.from_numpy(np.where(tst_lbl.numpy() != nrm_cls_idx)[0])
-
-    # Get n percent of the abnormal samples.
-    abn_tst_idx = abn_tst_idx[torch.randperm(len(abn_tst_idx))]
-    abn_tst_idx = abn_tst_idx[:int(len(abn_tst_idx) * proportion)]
+    return train_sample, test_sample
 
 
-    # --
-    # Find normal and abnormal images
-    nrm_trn_img = trn_img[nrm_trn_idx]    # Normal training images
-    abn_trn_img = trn_img[abn_trn_idx]    # Abnormal training images.
-    nrm_tst_img = tst_img[nrm_tst_idx]    # Normal training images
-    abn_tst_img = tst_img[abn_tst_idx]    # Abnormal training images.
+class LoadDataset(Dataset):
+    def __init__(self, figure_dir, label=None, transform=None):
+        self.file_name_list = glob.glob('{0}/*'.format(figure_dir))
+        self.label = label
+        self.transform = transform
 
-    # --
-    # Find normal and abnormal labels.
-    nrm_trn_lbl = trn_lbl[nrm_trn_idx]    # Normal training labels
-    abn_trn_lbl = trn_lbl[abn_trn_idx]    # Abnormal training labels.
-    nrm_tst_lbl = tst_lbl[nrm_tst_idx]    # Normal training labels
-    abn_tst_lbl = tst_lbl[abn_tst_idx]    # Abnormal training labels.
+        assert self.label == 'good' or self.label == 'failed', 'label must be good or failed!'
+        if self.label == 'good':
+            self.label = 1
+        else:
+            self.label = 0
 
-    # --
-    # Assign labels to normal (0) and abnormals (1)
-    nrm_trn_lbl[:] = 0
-    nrm_tst_lbl[:] = 0
-    abn_trn_lbl[:] = 1
-    abn_tst_lbl[:] = 1
+        self.count = len(self.file_name_list)
+        self.data_x = np.empty((self.count,1,12,12), dtype='float32')
+        self.data_y = []
 
-    # Create new anomaly dataset based on the following data structure:
-    new_trn_img = nrm_trn_img.clone()
-    new_trn_lbl = nrm_trn_lbl.clone()
-    new_tst_img = torch.cat((nrm_tst_img, abn_tst_img), dim=0)
-    new_tst_lbl = torch.cat((nrm_tst_lbl, abn_tst_lbl), dim=0)
+        i = 0
+        for file_name in self.file_name_list:
+            one_figure = pd.read_csv(file_name, header=None)
+            arr = one_figure.values
+            self.data_x[i,:,:,:] = arr
+            i+=1
+            self.data_y.append(self.label)
 
-    return new_trn_img, new_trn_lbl, new_tst_img, new_tst_lbl
+        self.data_y = np.asarray(self.data_y)
+
+        self.data_x = torch.from_numpy(self.data_x)
+        self.data_y = torch.from_numpy(self.data_y)
+
+    def __len__(self):
+        return self.count
+
+    def __getitem__(self, idx):
+        feature = self.data_x[idx]
+        label = self.data_y[idx]
+        if self.transform:
+            feature = self.transform(feature)
+
+        return [feature, label]

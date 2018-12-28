@@ -1,3 +1,10 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# File              : lib/evaluate.py
+# Author            : Tianming Jiang <djtimy920@gmail.com>
+# Date              : 05.11.2018
+# Last Modified Date: 25.12.2018
+# Last Modified By  : Tianming Jiang <djtimy920@gmail.com>
 """ Evaluate ROC
 
 Returns:
@@ -14,6 +21,9 @@ import os
 from sklearn.metrics import roc_curve, auc, average_precision_score, f1_score
 from scipy.optimize import brentq
 from scipy.interpolate import interp1d
+import matplotlib
+# matplotlib.use('TkAgg')
+matplotlib.use('agg')
 import matplotlib.pyplot as plt
 from matplotlib import rc
 rc('font', **{'family': 'serif', 'serif': ['Computer Modern']})

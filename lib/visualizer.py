@@ -1,3 +1,10 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# File              : lib/visualizer.py
+# Author            : Tianming Jiang <djtimy920@gmail.com>
+# Date              : 25.12.2018
+# Last Modified Date: 25.12.2018
+# Last Modified By  : Tianming Jiang <djtimy920@gmail.com>
 """ This file contains Visualizer class based on Facebook's visdom.
 
 Returns:
@@ -58,7 +65,6 @@ class Visualizer():
 
         Args:
             inp ([FloatTensor]): Input tensor
-
         Returns:
             [FloatTensor]: Normalized tensor.
         """

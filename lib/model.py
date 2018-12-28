@@ -1,8 +1,19 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# File              : lib/model.py
+# Author            : Tianming Jiang <djtimy920@gmail.com>
+# Date              : 05.11.2018
+# Last Modified Date: 28.12.2018
+# Last Modified By  : Tianming Jiang <djtimy920@gmail.com>
 """GANomaly
+训练过程详见train_epoch：
+1）构建输入格式
+2）训练D网络和G网络
 """
 # pylint: disable=C0301,E1101,W0622,C0103,R0902,R0915
 
 ##
+# 记住插入顺序的字典类
 from collections import OrderedDict
 import os
 import time
@@ -26,6 +37,7 @@ class Ganomaly(object):
     """
 
     @staticmethod
+    # 我注：这种情况用property更合适吧
     def name():
         """Return name of the class.
         """
@@ -38,6 +50,7 @@ class Ganomaly(object):
         self.opt = opt
         self.visualizer = Visualizer(opt)
         self.dataloader = dataloader
+        # set the output folder, and self.opt.name is always euqal ${ganomaly/$dataset},详见option.py line106
         self.trn_dir = os.path.join(self.opt.outf, self.opt.name, 'train')
         self.tst_dir = os.path.join(self.opt.outf, self.opt.name, 'test')
         self.device = torch.device("cuda:0" if self.opt.device != 'cpu' else "cpu")
@@ -70,10 +83,13 @@ class Ganomaly(object):
         # Create and initialize networks.
         self.netg = NetG(self.opt).to(self.device)
         self.netd = NetD(self.opt).to(self.device)
+        # 分别对网络模型的Conv层和BatchNorm层进行参数初始化
         self.netg.apply(weights_init)
         self.netd.apply(weights_init)
 
         ##
+        # is not none, to continue training from the path of checkpointers specified by opt.resume
+        # 类似于我在cnn_disk项目中使用到的fine-tune
         if self.opt.resume != '':
             print("\nLoading pre-trained networks.")
             self.opt.iter = torch.load(os.path.join(self.opt.resume, 'netG.pth'))['epoch']
@@ -85,7 +101,7 @@ class Ganomaly(object):
         # print(self.netd)
 
         ##
-        # Loss Functions
+        # Loss Functions, Binary Cross Entropy
         self.bce_criterion = nn.BCELoss()
         self.l1l_criterion = nn.L1Loss()
         self.l2l_criterion = l2_loss
@@ -93,13 +109,13 @@ class Ganomaly(object):
         ##
         # Initialize input tensors.
         self.input = torch.empty(size=(self.opt.batchsize, 3, self.opt.isize, self.opt.isize), dtype=torch.float32, device=self.device)
+        self.opt.logger.info('empty input size: {}'.format(self.input.size()))
         self.label = torch.empty(size=(self.opt.batchsize,), dtype=torch.float32, device=self.device)
         self.gt    = torch.empty(size=(opt.batchsize,), dtype=torch.long, device=self.device)
         self.fixed_input = torch.empty(size=(self.opt.batchsize, 3, self.opt.isize, self.opt.isize), dtype=torch.float32, device=self.device)
         self.real_label = 1
         self.fake_label = 0
-
-        ##
+        
         # Setup optimizer
         if self.opt.isTrain:
             self.netg.train()
@@ -110,10 +126,16 @@ class Ganomaly(object):
     ##
     def set_input(self, input):
         """ Set input and ground truth
-
         Args:
             input (FloatTensor): Input data for batch i.
         """
+
+        # in-place计算，类似’+=’运算，表示内部直接替换,in-place操作都使用_作为后缀。
+        # input[0]为转化后的图片数据，input[1]为标签
+        self.opt.logger.info('input size: {}'.format(input[0].size()))
+        self.opt.logger.info('empty input size: {}'.format(self.input.size()))
+        self.opt.logger.info('input value {}'.format(input[0][0]))
+
         self.input.data.resize_(input[0].size()).copy_(input[0])
         self.gt.data.resize_(input[1].size()).copy_(input[1])
 
@@ -144,7 +166,6 @@ class Ganomaly(object):
         self.err_d_fake = self.err_d
         self.err_d.backward()
         self.optimizer_d.step()
-
 
     ##
     def reinitialize_netd(self):
@@ -177,7 +198,6 @@ class Ganomaly(object):
     def optimize(self):
         """ Optimize netD and netG  networks.
         """
-
         self.update_netd()
         self.update_netg()
 
@@ -206,11 +226,9 @@ class Ganomaly(object):
     ##
     def get_current_images(self):
         """ Returns current images.
-
         Returns:
             [reals, fakes, fixed]
         """
-
         reals = self.input.data
         fakes = self.fake.data
         fixed = self.netg(self.fixed_input)[0].data
@@ -238,22 +256,25 @@ class Ganomaly(object):
     def train_epoch(self):
         """ Train the model for one epoch.
         """
-
         self.netg.train()
         epoch_iter = 0
+        # 一个batch一个batch的训练
+
         for data in tqdm(self.dataloader['train'], leave=False, total=len(self.dataloader['train'])):
             self.total_steps += self.opt.batchsize
             epoch_iter += self.opt.batchsize
 
             self.set_input(data)
-            self.optimize()
+            self.optimize() #训练模型
 
+            # 打印误差
             if self.total_steps % self.opt.print_freq == 0:
                 errors = self.get_errors()
                 if self.opt.display:
                     counter_ratio = float(epoch_iter) / len(self.dataloader['train'].dataset)
                     self.visualizer.plot_current_errors(self.epoch, counter_ratio, errors)
 
+            # 保存图片
             if self.total_steps % self.opt.save_image_freq == 0:
                 reals, fakes, fixed = self.get_current_images()
                 self.visualizer.save_current_images(self.epoch, reals, fakes, fixed)
@@ -262,11 +283,11 @@ class Ganomaly(object):
 
         print(">> Training model %s. Epoch %d/%d" % (self.name(), self.epoch+1, self.opt.niter))
         # self.visualizer.print_current_errors(self.epoch, errors)
+
     ##
     def train(self):
         """ Train the model
         """
-
         ##
         # TRAIN
         self.total_steps = 0
@@ -275,7 +296,7 @@ class Ganomaly(object):
         # Train for niter epochs.
         print(">> Training model %s." % self.name())
         for self.epoch in range(self.opt.iter, self.opt.niter):
-            # Train for one epoch
+            # Train for one epoch, then test and update the best_auc
             self.train_epoch()
             res = self.test()
             if res['AUC'] > best_auc:
@@ -287,10 +308,8 @@ class Ganomaly(object):
     ##
     def test(self):
         """ Test GANomaly model.
-
         Args:
             dataloader ([type]): Dataloader for the test set
-
         Raises:
             IOError: Model weights not found.
         """
