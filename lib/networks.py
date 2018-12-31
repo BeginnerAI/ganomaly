@@ -3,7 +3,7 @@
 # File              : lib/networks.py
 # Author            : Tianming Jiang <djtimy920@gmail.com>
 # Date              : 07.11.2018
-# Last Modified Date: 25.12.2018
+# Last Modified Date: 30.12.2018
 # Last Modified By  : Tianming Jiang <djtimy920@gmail.com>
 """ Network architectures.
 """
@@ -39,7 +39,8 @@ class Encoder(nn.Module):
         assert isize % 16 == 0, "isize has to be a multiple of 16"
 
         main = nn.Sequential()
-        # input is nc x isize x isize
+        # input is nc * isize * isize
+        # ndf: Number of channels produced by the convolution
         main.add_module('initial-conv-{0}-{1}'.format(nc, ndf),
                         nn.Conv2d(nc, ndf, 4, 2, 1, bias=False))
         main.add_module('initial-relu-{0}'.format(ndf),
@@ -158,7 +159,8 @@ class NetD(nn.Module):
         features = self.features(x)
         features = features
         classifier = self.classifier(features)
-        classifier = classifier.view(-1, 1).squeeze(1)
+        # view to resize/reshape tensor
+        classifier = classifier.view(-1, 1).squeeze(1) 
 
         return classifier, features
 

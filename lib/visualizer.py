@@ -3,7 +3,7 @@
 # File              : lib/visualizer.py
 # Author            : Tianming Jiang <djtimy920@gmail.com>
 # Date              : 25.12.2018
-# Last Modified Date: 25.12.2018
+# Last Modified Date: 31.12.2018
 # Last Modified By  : Tianming Jiang <djtimy920@gmail.com>
 """ This file contains Visualizer class based on Facebook's visdom.
 
@@ -141,7 +141,7 @@ class Visualizer():
             log_file.write('%s\n' % message)
 
     ##
-    def print_current_performance(self, performance, best):
+    def print_current_performance(self, performance, best=None):
         """ Print current performance results.
 
         Args:
@@ -151,7 +151,8 @@ class Visualizer():
         message = '   '
         for key, val in performance.items():
             message += '%s: %.3f ' % (key, val)
-        message += 'max AUC: %.3f' % best
+        if best:
+            message += 'max AUC: %.3f' % best
 
         print(message)
         with open(self.log_name, "a") as log_file:

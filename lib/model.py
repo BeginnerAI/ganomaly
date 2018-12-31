@@ -3,7 +3,7 @@
 # File              : lib/model.py
 # Author            : Tianming Jiang <djtimy920@gmail.com>
 # Date              : 05.11.2018
-# Last Modified Date: 28.12.2018
+# Last Modified Date: 31.12.2018
 # Last Modified By  : Tianming Jiang <djtimy920@gmail.com>
 """GANomaly
 训练过程详见train_epoch：
@@ -109,7 +109,7 @@ class Ganomaly(object):
         ##
         # Initialize input tensors.
         self.input = torch.empty(size=(self.opt.batchsize, 3, self.opt.isize, self.opt.isize), dtype=torch.float32, device=self.device)
-        self.opt.logger.info('empty input size: {}'.format(self.input.size()))
+        # self.opt.logger.info('empty input size: {}'.format(self.input.size()))
         self.label = torch.empty(size=(self.opt.batchsize,), dtype=torch.float32, device=self.device)
         self.gt    = torch.empty(size=(opt.batchsize,), dtype=torch.long, device=self.device)
         self.fixed_input = torch.empty(size=(self.opt.batchsize, 3, self.opt.isize, self.opt.isize), dtype=torch.float32, device=self.device)
@@ -132,9 +132,9 @@ class Ganomaly(object):
 
         # in-place计算，类似’+=’运算，表示内部直接替换,in-place操作都使用_作为后缀。
         # input[0]为转化后的图片数据，input[1]为标签
-        self.opt.logger.info('input size: {}'.format(input[0].size()))
-        self.opt.logger.info('empty input size: {}'.format(self.input.size()))
-        self.opt.logger.info('input value {}'.format(input[0][0]))
+        # self.opt.logger.info('input size: {}'.format(input[0].size()))
+        # self.opt.logger.info('empty input size: {}'.format(self.input.size()))
+        # self.opt.logger.info('input value {}'.format(input[0][0]))
 
         self.input.data.resize_(input[0].size()).copy_(input[0])
         self.gt.data.resize_(input[1].size()).copy_(input[1])
@@ -298,11 +298,11 @@ class Ganomaly(object):
         for self.epoch in range(self.opt.iter, self.opt.niter):
             # Train for one epoch, then test and update the best_auc
             self.train_epoch()
-            res = self.test()
-            if res['AUC'] > best_auc:
-                best_auc = res['AUC']
+            performance = self.test()
+            if performance['AUC'] > best_auc:
+                best_auc = performance['AUC']
                 self.save_weights(self.epoch)
-            self.visualizer.print_current_performance(res, best_auc)
+            self.visualizer.print_current_performance(performance, best_auc)
         print(">> Training model %s.[Done]" % self.name())
 
     ##
@@ -313,6 +313,7 @@ class Ganomaly(object):
         Raises:
             IOError: Model weights not found.
         """
+        # inference scenario, 不需要保存梯度
         with torch.no_grad():
             # Load the weights of netg and netd.
             if self.opt.load_weights:
@@ -325,6 +326,7 @@ class Ganomaly(object):
                     raise IOError("netG weights not found")
                 print('   Loaded weights.')
 
+            # 就在这里用到了，可以用来扩充只做test
             self.opt.phase = 'test'
 
             # Create big error tensor for the test set.
@@ -376,4 +378,6 @@ class Ganomaly(object):
             if self.opt.display_id > 0 and self.opt.phase == 'test':
                 counter_ratio = float(epoch_iter) / len(self.dataloader['test'].dataset)
                 self.visualizer.plot_performance(self.epoch, counter_ratio, performance)
+            
+            self.visualizer.print_current_performance(performance)
             return performance

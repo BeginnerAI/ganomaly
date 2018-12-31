@@ -3,7 +3,7 @@
 # File              : options.py
 # Author            : Tianming Jiang <djtimy920@gmail.com>
 # Date              : 05.11.2018
-# Last Modified Date: 28.12.2018
+# Last Modified Date: 31.12.2018
 # Last Modified By  : Tianming Jiang <djtimy920@gmail.com>
 """ Options
 
@@ -46,7 +46,7 @@ class Options():
         self.parser.add_argument('--ngf', type=int, default=64)
         self.parser.add_argument('--ndf', type=int, default=64)
         self.parser.add_argument('--extralayers', type=int, default=0, help='Number of extra layers on gen and disc')
-        self.parser.add_argument('--device', type=str, default='cpu', help='Device: gpu | cpu')
+        self.parser.add_argument('--device', type=str, default='gpu', help='Device: gpu | cpu')
         self.parser.add_argument('--gpu_ids', type=str, default='0', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
         self.parser.add_argument('--ngpu', type=int, default=1, help='number of GPUs to use')
         self.parser.add_argument('--name', type=str, default='experiment_name', help='name of the experiment')
@@ -77,7 +77,16 @@ class Options():
         self.parser.add_argument('--w_bce', type=float, default=1, help='alpha to weight bce loss.')
         self.parser.add_argument('--w_rec', type=float, default=50, help='alpha to weight reconstruction loss')
         self.parser.add_argument('--w_enc', type=float, default=1, help='alpha to weight encoder loss')
+        
+        ##
+        # for logger
         self.parser.add_argument('--log_config_file', type=str, default='./lib/logging_config.ini', help='log configure file dir')
+        self.parser.add_argument('--logger', type=str, default='stream', help='logger level')
+
+        ##
+        # for disk
+        self.parser.add_argument('--n_sn', type=int, default=100, help='number of sn for good or fail')
+        # self.parser.add_argument('--n_sample', type=int, default=100, help='number of sample for each sn')
         self.isTrain = True
         self.opt = None
 
@@ -96,13 +105,15 @@ class Options():
                 self.opt.gpu_ids.append(id)
 
         # set gpu ids
+        # 疑问：
+        # 只用了第一个gpu，为何还好设置包含多个gpu编号的gpu_ids呢？
+        # 与lib/model.py line 56的设置为cuda：0是不是重复了/矛盾了？
         if self.opt.device == 'gpu':
             torch.cuda.set_device(self.opt.gpu_ids[0])
 
         # 设置logger
         fileConfig(self.opt.log_config_file)
-        # self.opt.logger = logging.getLogger('stream')
-        self.opt.logger = logging.getLogger('root')
+        self.opt.logger = logging.getLogger(self.opt.logger)
 
         args = vars(self.opt)
 

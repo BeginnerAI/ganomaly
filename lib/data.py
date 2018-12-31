@@ -3,7 +3,7 @@
 # File              : lib/data.py
 # Author            : Tianming Jiang <djtimy920@gmail.com>
 # Date              : 19.12.2018
-# Last Modified Date: 28.12.2018
+# Last Modified Date: 31.12.2018
 # Last Modified By  : Tianming Jiang <djtimy920@gmail.com>
 """
 LOAD DATA from file.
@@ -14,6 +14,7 @@ LOAD DATA from file.
 """
 
 ##
+import os
 import torch
 import numpy as np
 from torchvision.datasets import MNIST
@@ -41,52 +42,6 @@ def load_data(opt):
     if opt.dataroot == '':
         opt.dataroot = './data/{}'.format(opt.dataset)
 
-    if opt.dataset in ['disk_1d']:
-        splits = ['train', 'test']
-        drop_last_batch = {'train': True, 'test': False}
-        shuffle = {'train': True, 'test': True}
-
-        # transforms.Compose就是将transforms组合在一起
-        transform = transforms.Compose(
-            [
-                transforms.Scale(opt.isize),
-                transforms.ToTensor(), # range [0, 255] -> [0.0,1.0]
-            ]
-        )
-        from sklearn import datasets
-        import numpy as np
-        # how to generate imbalanced dataset
-        data, labels = datasets.make_classification(n_samples=1000, n_features=3, n_redundant=0)
-
-        good_index = np.where(labels==1)
-        nrm_trn_len = int(len(good_index) * 0.80)
-        train_good_index = good_index[:nrm_trn_idx]
-        test_good_index = good_index[nrm_trn_idx:]
-
-        fail_index = np.where(labels!=1)
-
-        dataset = {}
-        dataset['train'] = {
-                'train_data': data[train_good_index],
-                'train_lables': labels[train_good_index]
-                }
-
-        dataset['test'] = {
-                'test_data': np.concatenate((data[test_good_index], data[fail_index])),
-                'test_labels': np.concatenate((labels[test_good_index], labels[fail_index]))
-                }
-
-        # 生成一个dict
-        # DataLoader中的shuffle，洗牌。默认设置为False。在每次迭代训练时是否将数据洗牌，默认设置是False。
-        # 将输入数据的顺序打乱，是为了使数据更有独立性，但如果数据是有序列特征的，就不要设置成True了。
-        # 在disk failure prediction中是不能够打乱次序的，因为SMART是有序的
-        dataloader = {x: torch.utils.data.DataLoader(dataset=dataset[x],
-                                                     batch_size=opt.batchsize,
-                                                     shuffle=shuffle[x],
-                                                     num_workers=int(opt.workers),
-                                                     drop_last=drop_last_batch[x]) for x in splits}
-        return dataloader
-
     if opt.dataset in ['disk']:
         splits = ['train', 'test']
         drop_last_batch = {'train': True, 'test': False}
@@ -101,10 +56,8 @@ def load_data(opt):
             ]
         )
 
-        good_sample_dir = '/home/jtm/data/cnn_disk/intermediate_result/data_2017_with_change_rate/baidu/good_sample/00443'
-        failed_sample_dir = '/home/jtm/data/cnn_disk/intermediate_result/data_2017_with_change_rate/baidu/failed_sample/00052'
-        good_sample = LoadDataset(good_sample_dir, 'good', transform)
-        failed_sample = LoadDataset(failed_sample_dir, 'failed', transform)
+        good_sample = LoadDiskDataset(opt, 'good_sample', transform)
+        failed_sample = LoadDiskDataset(opt, 'failed_sample', transform)
 
         dataset = {}
         dataset['train'], dataset['test'] = get_disk_anomaly_dataset(good_sample, failed_sample, 1)
@@ -113,6 +66,41 @@ def load_data(opt):
         # DataLoader中的shuffle，洗牌。默认设置为False。在每次迭代训练时是否将数据洗牌，默认设置是False。
         # 将输入数据的顺序打乱，是为了使数据更有独立性，但如果数据是有序列特征的，就不要设置成True了。
         # 在disk failure prediction中是不能够打乱次序的，因为SMART是有序的
+        dataloader = {x: torch.utils.data.DataLoader(dataset=dataset[x],
+                                                     batch_size=opt.batchsize,
+                                                     shuffle=shuffle[x],
+                                                     num_workers=int(opt.workers),
+                                                     drop_last=drop_last_batch[x]) for x in splits}
+        return dataloader
+    ##
+    elif opt.dataset in ['mnist']:
+        opt.anomaly_class = int(opt.anomaly_class)
+
+        splits = ['train', 'test']
+        drop_last_batch = {'train': True, 'test': False}
+        shuffle = {'train': True, 'test': True}
+
+        transform = transforms.Compose(
+            [
+                transforms.Scale(opt.isize),
+                transforms.ToTensor(),
+                transforms.Normalize((0.1307,), (0.3081,))
+            ]
+        )
+
+        dataset = {}
+        dataset['train'] = MNIST(root='./data', train=True, download=True, transform=transform)
+        dataset['test'] = MNIST(root='./data', train=False, download=True, transform=transform)
+
+        dataset['train'].train_data, dataset['train'].train_labels, \
+        dataset['test'].test_data, dataset['test'].test_labels = get_mnist_anomaly_dataset(
+            trn_img=dataset['train'].train_data,
+            trn_lbl=dataset['train'].train_labels,
+            tst_img=dataset['test'].test_data,
+            tst_lbl=dataset['test'].test_labels,
+            abn_cls_idx=opt.anomaly_class
+        )
+
         dataloader = {x: torch.utils.data.DataLoader(dataset=dataset[x],
                                                      batch_size=opt.batchsize,
                                                      shuffle=shuffle[x],
@@ -133,8 +121,9 @@ def get_disk_anomaly_dataset(good_sample, failed_sample, manualseed=-1):
         # Split the normal data into the new train and tests.
         idx = np.arange(len(good_sample))
         np.random.seed(manualseed)
-        np.random.shuffle(idx)
-
+        # np.random.shuffle(idx)
+        
+        # 取80%的健康样本到训练集中
         good_train_lens = int(len(idx) * 0.80)
         good_train_idx = idx[:good_train_lens]
         good_test_idx = idx[good_train_lens:]
@@ -148,25 +137,33 @@ def get_disk_anomaly_dataset(good_sample, failed_sample, manualseed=-1):
     return train_sample, test_sample
 
 
-class LoadDataset(Dataset):
-    def __init__(self, figure_dir, label=None, transform=None):
-        self.file_name_list = glob.glob('{0}/*'.format(figure_dir))
-        self.label = label
+class LoadDiskDataset(Dataset):
+    def __init__(self, opt, label=None, transform=None):
+        opt.logger.info('loading data for {}'.format(label))
         self.transform = transform
 
-        assert self.label == 'good' or self.label == 'failed', 'label must be good or failed!'
-        if self.label == 'good':
-            self.label = 1
-        else:
-            self.label = 0
+        data_dir = '/home/jtm/data/cnn_disk/intermediate_result/data_2017_with_change_rate/baidu'
+        sn_dir = os.path.join(data_dir, label)
+        sn_list = glob.glob('{0}/*'.format(sn_dir))
+        self.sample_list = []
+        for index, sn in enumerate(sn_list):
+            if index == opt.n_sn:
+                break
+            self.sample_list.extend(glob.glob('{0}/*'.format(sn)))
 
-        self.count = len(self.file_name_list)
+        assert label == 'good_sample' or label == 'failed_sample', 'label must be good_sample or failed_sample!'
+        if label == 'good_sample':
+            self.label = 0
+        else:
+            self.label = 1
+
+        self.count = len(self.sample_list)
         self.data_x = np.empty((self.count,1,12,12), dtype='float32')
         self.data_y = []
 
         i = 0
-        for file_name in self.file_name_list:
-            one_figure = pd.read_csv(file_name, header=None)
+        for sample in self.sample_list:
+            one_figure = pd.read_csv(sample, header=None)
             arr = one_figure.values
             self.data_x[i,:,:,:] = arr
             i+=1
@@ -187,3 +184,78 @@ class LoadDataset(Dataset):
             feature = self.transform(feature)
 
         return [feature, label]
+
+##
+def get_mnist_anomaly_dataset(trn_img, trn_lbl, tst_img, tst_lbl, abn_cls_idx=0, manualseed=-1):
+    """[summary]
+
+    Arguments:
+        trn_img {np.array} -- Training images
+        trn_lbl {np.array} -- Training labels
+        tst_img {np.array} -- Test     images
+        tst_lbl {np.array} -- Test     labels
+
+    Keyword Arguments:
+        abn_cls_idx {int} -- Anomalous class index (default: {0})
+
+    Returns:
+        [np.array] -- New training-test images and labels.
+    """
+    # --
+    # Find normal abnormal indexes.
+    nrm_trn_idx = torch.from_numpy(np.where(trn_lbl.numpy() != abn_cls_idx)[0])
+    abn_trn_idx = torch.from_numpy(np.where(trn_lbl.numpy() == abn_cls_idx)[0])
+    nrm_tst_idx = torch.from_numpy(np.where(tst_lbl.numpy() != abn_cls_idx)[0])
+    abn_tst_idx = torch.from_numpy(np.where(tst_lbl.numpy() == abn_cls_idx)[0])
+
+    # --
+    # Find normal and abnormal images
+    nrm_trn_img = trn_img[nrm_trn_idx]    # Normal training images
+    abn_trn_img = trn_img[abn_trn_idx]    # Abnormal training images.
+    nrm_tst_img = tst_img[nrm_tst_idx]    # Normal training images
+    abn_tst_img = tst_img[abn_tst_idx]    # Abnormal training images.
+
+    # --
+    # Find normal and abnormal labels.
+    nrm_trn_lbl = trn_lbl[nrm_trn_idx]    # Normal training labels
+    abn_trn_lbl = trn_lbl[abn_trn_idx]    # Abnormal training labels.
+    nrm_tst_lbl = tst_lbl[nrm_tst_idx]    # Normal training labels
+    abn_tst_lbl = tst_lbl[abn_tst_idx]    # Abnormal training labels.
+
+    # --
+    # Assign labels to normal (0) and abnormals (1)
+    nrm_trn_lbl[:] = 0
+    nrm_tst_lbl[:] = 0
+    abn_trn_lbl[:] = 1
+    abn_tst_lbl[:] = 1
+
+    # --
+    if manualseed != -1:
+        # Random seed.
+        # Concatenate the original train and test sets.
+        nrm_img = torch.cat((nrm_trn_img, nrm_tst_img), dim=0)
+        nrm_lbl = torch.cat((nrm_trn_lbl, nrm_tst_lbl), dim=0)
+        abn_img = torch.cat((abn_trn_img, abn_tst_img), dim=0)
+        abn_lbl = torch.cat((abn_trn_lbl, abn_tst_lbl), dim=0)
+
+        # Split the normal data into the new train and tests.
+        idx = np.arange(len(nrm_lbl))
+        np.random.seed(manualseed)
+        np.random.shuffle(idx)
+
+        nrm_trn_len = int(len(idx) * 0.80)
+        nrm_trn_idx = idx[:nrm_trn_len]
+        nrm_tst_idx = idx[nrm_trn_len:]
+
+        nrm_trn_img = nrm_img[nrm_trn_idx]
+        nrm_trn_lbl = nrm_lbl[nrm_trn_idx]
+        nrm_tst_img = nrm_img[nrm_tst_idx]
+        nrm_tst_lbl = nrm_lbl[nrm_tst_idx]
+
+    # Create new anomaly dataset based on the following data structure:
+    new_trn_img = nrm_trn_img.clone()
+    new_trn_lbl = nrm_trn_lbl.clone()
+    new_tst_img = torch.cat((nrm_tst_img, abn_trn_img, abn_tst_img), dim=0)
+    new_tst_lbl = torch.cat((nrm_tst_lbl, abn_trn_lbl, abn_tst_lbl), dim=0)
+
+    return new_trn_img, new_trn_lbl, new_tst_img, new_tst_lbl

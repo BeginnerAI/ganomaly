@@ -3,7 +3,7 @@
 # File              : train.py
 # Author            : Tianming Jiang <djtimy920@gmail.com>
 # Date              : 05.11.2018
-# Last Modified Date: 27.12.2018
+# Last Modified Date: 31.12.2018
 # Last Modified By  : Tianming Jiang <djtimy920@gmail.com>
 """
 TRAIN GANOMALY
@@ -36,7 +36,6 @@ from lib.model import Ganomaly
 ##
 # ARGUMENTS
 opt = Options().parse()
-opt.logger.info('test logger')
 
 ##
 # LOAD DATA
@@ -48,7 +47,12 @@ model = Ganomaly(opt, dataloader)
 
 ##
 # TRAIN MODEL
-model.train()
+if opt.phase == 'train':
+    opt.logger.info('train')
+    model.train()
+else:
+    opt.logger.info('test')
+    model.test()
 
 # if __name__ == '__main__':
 #     main()
